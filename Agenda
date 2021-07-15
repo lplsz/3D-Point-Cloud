@@ -1,0 +1,3 @@
+#TODO
+Implement feature sampling in addition to farthest point sampling in pointnet++
+models/pointnet2_utils includes farthest point sampling method
