@@ -54,11 +54,11 @@ def index_points(points, idx):
     """
     device = points.device
     B = points.shape[0]
-    view_shape = list(idx.shape)
-    view_shape[1:] = [1] * (len(view_shape) - 1)
+    view_shape = list(idx.shape)                    # [B, N, 1]
+    view_shape[1:] = [1] * (len(view_shape) - 1)    # [B, 1, 1]
     repeat_shape = list(idx.shape)
-    repeat_shape[0] = 1
-    batch_indices = torch.arange(B, dtype=torch.long).to(device).view(view_shape).repeat(repeat_shape)
+    repeat_shape[0] = 1                             # [1, N, 1]
+    batch_indices = torch.arange(B, dtype=torch.long).to(device).view(view_shape).repeat(repeat_shape)  # [B, N, 1]
     new_points = points[batch_indices, idx, :]
     return new_points
 
@@ -131,16 +131,17 @@ def query_ball_point(radius, nsample, xyz, new_xyz):
     Return:
         group_idx: grouped points index, [B, S, nsample]        Index of the points in the sphere
     """
+    # TODO: Change here to get kNN
     device = xyz.device
     B, N, C = xyz.shape
     _, S, _ = new_xyz.shape
     group_idx = torch.arange(N, dtype=torch.long).to(device).view(1, 1, N).repeat([B, S, 1])  # [B, S, N], Indices are 0 to N-1
     sqrdists = square_distance(new_xyz, xyz)                # [B, S, N]: Distance between centroids and the points
-    # group_idx[sqrdists > radius ** 2] = N                   # Let all points outside of the ball have indices N
+    group_idx[sqrdists > radius ** 2] = N                   # Let all points outside of the ball have indices N
     group_idx = group_idx.sort(dim=-1)[0][:, :, :nsample]     # sort the points on the last dimension (The indices), take the first nsample points
-    # group_first = group_idx[:, :, 0].view(B, S, 1).repeat([1, 1, nsample])    # A indices array where the first index is repeated
-    # mask = group_idx == N
-    # group_idx[mask] = group_first[mask]                     # Replace the out of radius points with the first point
+    group_first = group_idx[:, :, 0].view(B, S, 1).repeat([1, 1, nsample])    # A indices array where the first index is repeated
+    mask = group_idx == N
+    group_idx[mask] = group_first[mask]                     # Replace the out of radius points with the first point
     return group_idx
 
 
@@ -340,29 +341,38 @@ class PointNetFeaturePropagation(nn.Module):
         Return:
             new_points: upsampled points data, [B, D', N]
         """
-        xyz1 = xyz1.permute(0, 2, 1)
-        xyz2 = xyz2.permute(0, 2, 1)
+        xyz1 = xyz1.permute(0, 2, 1)            # [B, N, C]
+        xyz2 = xyz2.permute(0, 2, 1)            # [B, S, C]
 
         points2 = points2.permute(0, 2, 1)      # [B, S, D]
         B, N, C = xyz1.shape
         _, S, _ = xyz2.shape
 
+        
+        # if S == 1:
+        #     interpolated_points = points2.repeat(1, N, 1)
+        # else:
+        #     dists = square_distance(xyz1, xyz2)
+        #     dists, idx = dists.sort(dim=-1)
+        #     dists, idx = dists[:, :, :3], idx[:, :, :3]  # [B, N, 3]
 
-        if S == 1:
-            interpolated_points = points2.repeat(1, N, 1)
-        else:
-            dists = square_distance(xyz1, xyz2)
-            dists, idx = dists.sort(dim=-1)
-            dists, idx = dists[:, :, :3], idx[:, :, :3]  # [B, N, 3]
+        #     dist_recip = 1.0 / (dists + 1e-8)
+        #     norm = torch.sum(dist_recip, dim=2, keepdim=True)
+        #     weight = dist_recip / norm
+        #     interpolated_points = torch.sum(index_points(points2, idx) * weight.view(B, N, 3, 1), dim=2)
 
-            dist_recip = 1.0 / (dists + 1e-8)
-            norm = torch.sum(dist_recip, dim=2, keepdim=True)
-            weight = dist_recip / norm
-            interpolated_points = torch.sum(index_points(points2, idx) * weight.view(B, N, 3, 1), dim=2)
+        # NOTE: Modify interpolation here
+        # points2 [B, S, D] -> interpolated_points [B, N, D]
+        dists = square_distance(xyz1, xyz2)             # [B, N, S]: Compute distance between all points and sampled points
+        dists, idx = dists.sort(dim=-1)                 # [B, N, S]: Sort the distance accendingly
+        dists, idx = dists[:, :, :1], idx[:, :, :1]     # [B, N, 1]: Take the closest points
+        
+        interpolated_points = index_points(points2, torch.squeeze(idx, 2))   # [B, N, 1] -> [B, N]
+
 
         if points1 is not None:
-            points1 = points1.permute(0, 2, 1)
-            new_points = torch.cat([points1, interpolated_points], dim=-1)
+            points1 = points1.permute(0, 2, 1)      # [B, N, D]
+            new_points = torch.cat([points1, interpolated_points], dim=-1)  # [B, N, 2D]
         else:
             new_points = interpolated_points
 
