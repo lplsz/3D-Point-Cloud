@@ -6,7 +6,7 @@ from torch.autograd import Variable
 import numpy as np
 import torch.nn.functional as F
 
-
+# Alignment Network (T-Net)
 class STN3d(nn.Module):
     def __init__(self, channel):
         super(STN3d, self).__init__()
