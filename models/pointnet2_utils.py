@@ -97,15 +97,16 @@ def query_ball_point(radius, nsample, xyz, new_xyz):
     device = xyz.device
     B, N, C = xyz.shape
     _, S, _ = new_xyz.shape
-    group_idx = torch.arange(N, dtype=torch.long).to(device).view(1, 1, N).repeat([B, S, 1])
-    sqrdists = square_distance(new_xyz, xyz)
-    group_idx[sqrdists > radius ** 2] = N
-    group_idx = group_idx.sort(dim=-1)[0][:, :, :nsample]
-    group_first = group_idx[:, :, 0].view(B, S, 1).repeat([1, 1, nsample])
+    group_idx = torch.arange(N, dtype=torch.long).to(device).view(1, 1, N).repeat([B, S, 1])  # [B, S, N], Indices are 0 to N-1
+    sqrdists = square_distance(new_xyz, xyz)                # [B, S, N]: Distance between centroids and the points
+    group_idx[sqrdists > radius ** 2] = N                   # Let all points outside of the ball have indices N
+    group_idx = group_idx.sort(dim=-1)[0][:, :, :nsample]     # sort the points on the last dimension (The indices), take the first nsample points
+    group_first = group_idx[:, :, 0].view(B, S, 1).repeat([1, 1, nsample])    # A indices array where the first index is repeated
     mask = group_idx == N
-    group_idx[mask] = group_first[mask]
+    group_idx[mask] = group_first[mask]                     # Replace the out of radius points with the first point
     return group_idx
 
+    
 
 def sample_and_group(npoint, radius, nsample, xyz, points, returnfps=False):
     """
