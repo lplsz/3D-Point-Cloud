@@ -106,7 +106,18 @@ def query_ball_point(radius, nsample, xyz, new_xyz):
     group_idx[mask] = group_first[mask]                     # Replace the out of radius points with the first point
     return group_idx
 
-    
+def kNN_point(nsample, xyz, new_xyz):
+    """
+    Input:
+        nsample: max sample number in local region
+        xyz: all points, [B, N, 3]
+        new_xyz: query points, [B, S, 3]
+    Return:
+        group_idx: grouped points index, [B, S, nsample]
+    """
+    sqrdists = square_distance(new_xyz, xyz)                # [B, S, N]: Distance between centroids and the points
+    neighbor_index = torch.topk(sqrdists, k= nsample, dim= -1, largest= False)[1]   # (nsmaple) NN
+    return neighbor_index
 
 def sample_and_group(npoint, radius, nsample, xyz, points, returnfps=False):
     """
@@ -124,7 +135,8 @@ def sample_and_group(npoint, radius, nsample, xyz, points, returnfps=False):
     S = npoint
     fps_idx = farthest_point_sample(xyz, npoint) # [B, npoint, C]
     new_xyz = index_points(xyz, fps_idx)
-    idx = query_ball_point(radius, nsample, xyz, new_xyz)
+    # NOTE: Grouping -> kNN; idx = query_ball_point(radius, nsample, xyz, new_xyz)
+    idx = kNN_point(nsample, xyz, new_xyz)
     grouped_xyz = index_points(xyz, idx) # [B, npoint, nsample, C]
     grouped_xyz_norm = grouped_xyz - new_xyz.view(B, S, 1, C)
 
@@ -241,7 +253,8 @@ class PointNetSetAbstractionMsg(nn.Module):
         new_points_list = []
         for i, radius in enumerate(self.radius_list):
             K = self.nsample_list[i]
-            group_idx = query_ball_point(radius, K, xyz, new_xyz)
+            # NOTE: Grouping -> kNN; group_idx = query_ball_point(radius, K, xyz, new_xyz)
+            group_idx = kNN_point(K, xyz, new_xyz)
             grouped_xyz = index_points(xyz, group_idx)
             grouped_xyz -= new_xyz.view(B, S, 1, C)
             if points is not None:
