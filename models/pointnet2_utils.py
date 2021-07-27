@@ -290,17 +290,24 @@ class PointNetFeaturePropagation(nn.Module):
         B, N, C = xyz1.shape
         _, S, _ = xyz2.shape
 
-        if S == 1:
-            interpolated_points = points2.repeat(1, N, 1)
-        else:
-            dists = square_distance(xyz1, xyz2)
-            dists, idx = dists.sort(dim=-1)
-            dists, idx = dists[:, :, :3], idx[:, :, :3]  # [B, N, 3]
+         # if S == 1:
+        #     interpolated_points = points2.repeat(1, N, 1)
+        # else:
+        #     dists = square_distance(xyz1, xyz2)
+        #     dists, idx = dists.sort(dim=-1)
+        #     dists, idx = dists[:, :, :3], idx[:, :, :3]  # [B, N, 3]
 
-            dist_recip = 1.0 / (dists + 1e-8)
-            norm = torch.sum(dist_recip, dim=2, keepdim=True)
-            weight = dist_recip / norm
-            interpolated_points = torch.sum(index_points(points2, idx) * weight.view(B, N, 3, 1), dim=2)
+        #     dist_recip = 1.0 / (dists + 1e-8)
+        #     norm = torch.sum(dist_recip, dim=2, keepdim=True)
+        #     weight = dist_recip / norm
+        #     interpolated_points = torch.sum(index_points(points2, idx) * weight.view(B, N, 3, 1), dim=2)
+
+        # NOTE: Modify interpolation here
+        # points2 [B, S, D] -> interpolated_points [B, N, D]
+        dists = square_distance(xyz1, xyz2)             # [B, N, S]: Compute distance between all points and sampled points
+        nearest_index = torch.topk(dists, k=1, dim=-1, largest=False)[1].squeeze(2)  # [B, N, 1].squeeze(2) -> [B, N]
+        
+        interpolated_points = index_points(points2, nearest_index)   # [B, N, 1] -> [B, N]
 
         if points1 is not None:
             points1 = points1.permute(0, 2, 1)
