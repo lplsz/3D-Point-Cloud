@@ -83,6 +83,40 @@ def farthest_point_sample(xyz, npoint):
         farthest = torch.max(distance, -1)[1]
     return centroids
 
+def farthest_point_sample_by_feature(points, npoint):
+    """
+    Input:
+        xyz: pointcloud data, [B, N, C]     C is the dimension of features
+        npoint: number of samples
+    Return:
+        centroids: sampled pointcloud index, [B, npoint]
+    """
+    device = points.device
+    B, N, C = points.shape
+    centroids = torch.zeros(B, npoint, dtype=torch.long).to(device)    # [B, npoint]: Indice of sampled points
+    distance = torch.ones(B, N).to(device) * 1e10                      # [B, Batch_size]: Distance from all points in a sample to a point
+    farthest = torch.randint(0, N, (B,), dtype=torch.long).to(device)  # B random integers in range (0, N): Represent the current farthest point. Intially, randomly chosen
+    batch_indices = torch.arange(B, dtype=torch.long).to(device)       # [0, 1, 2 .. , B - 1]
+
+    '''
+    1. Set the current sampling point centroids to the current farthest farthest;
+    2. Take out the coordinates of this center point centroid;
+    3. Find the Euclidean distance from all points to this farthest point, in the dist matrix;
+    4. Create a mask. If the element in dist is smaller than the distance value saved in the distance matrix, 
+       update the corresponding value in distance. As the iteration continues, the value in the distance matrix 
+       will gradually become smaller, which is equivalent to recording.The minimum distance of each point in a 
+       sample from all existing sample points；
+    5. Finally, take the farthest point from the distance matrix as farthest and continue to the next iteration.
+    '''
+    for i in range(npoint):
+        centroids[:, i] = farthest                                  # Append the current farthest points
+        centroid = points[batch_indices, farthest, :].view(B, 1, C)    # Find the coordinate of these current farthest point
+        dist = torch.sum((points - centroid) ** 2, -1)                 # Find the distance of all points to each centroid       
+        mask = dist < distance                                      # N: Update distances to record the minimum distance of each point in the sample from all existing sample points
+        distance[mask] = dist[mask]
+        farthest = torch.max(distance, -1)[1]                       # Returns (values, indices), [1] takes the indices
+    return centroids
+
 
 def query_ball_point(radius, nsample, xyz, new_xyz):
     """
@@ -121,25 +155,34 @@ def sample_and_group(npoint, radius, nsample, xyz, points, returnfps=False):
     """
     B, N, C = xyz.shape
     S = npoint
-    fps_idx = farthest_point_sample(xyz, npoint) # [B, npoint, C]
-    new_xyz = index_points(xyz, fps_idx)
-    idx = query_ball_point(radius, nsample, xyz, new_xyz)
-    grouped_xyz = index_points(xyz, idx) # [B, npoint, nsample, C]
-    grouped_xyz_norm = grouped_xyz - new_xyz.view(B, S, 1, C)
+    # NOTE: Change here to switch to feature sampling
+    # fps_idx = farthest_point_sample(xyz, npoint) # [B, npoint, 3]
+    fps_idx = farthest_point_sample_by_feature(points, npoint) # Change to use [points] instead of xyz to use FPS on features instead of distance
 
+    new_xyz = index_points(xyz, fps_idx)                        # Get the centroids
+    idx = query_ball_point(radius, nsample, xyz, new_xyz)       # Get the centroids' neighbour
+    grouped_xyz = index_points(xyz, idx)                        # Get those neighbour
+    grouped_xyz_norm = grouped_xyz - new_xyz.view(B, S, 1, C)   # Align the points by letting the centroid be the origin (0, 0, 0)
+
+    # If each points have additional features, concate them to have point of feature [3 + D]
     if points is not None:
         grouped_points = index_points(points, idx)
         new_points = torch.cat([grouped_xyz_norm, grouped_points], dim=-1) # [B, npoint, nsample, C+D]
     else:
         new_points = grouped_xyz_norm
+
     if returnfps:
         return new_xyz, new_points, grouped_xyz, fps_idx
     else:
         return new_xyz, new_points
+    
+    # Return the centroids (Coordination only) and the neighbours of each centroid (Coordination + Feature)
 
 
 def sample_and_group_all(xyz, points):
     """
+    Treat all points as a whole group, the centroid is just the origin
+
     Input:
         xyz: input points position data, [B, N, 3]
         points: input points data, [B, N, D]
@@ -150,7 +193,8 @@ def sample_and_group_all(xyz, points):
     device = xyz.device
     B, N, C = xyz.shape
     new_xyz = torch.zeros(B, 1, C).to(device)
-    grouped_xyz = xyz.view(B, 1, N, C)
+    grouped_xyz = xyz.view(B, 1, N, C)              # Add a dimension of length 1
+    
     if points is not None:
         new_points = torch.cat([grouped_xyz, points.view(B, 1, N, -1)], dim=-1)
     else:
