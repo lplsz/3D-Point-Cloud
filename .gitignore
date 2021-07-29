@@ -127,4 +127,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-data/
+/data/
+/unsw_pointnet_log
+/log

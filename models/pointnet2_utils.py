@@ -307,7 +307,7 @@ class PointNetFeaturePropagation(nn.Module):
         dists = square_distance(xyz1, xyz2)             # [B, N, S]: Compute distance between all points and sampled points
         nearest_index = torch.topk(dists, k=1, dim=-1, largest=False)[1].squeeze(2)  # [B, N, 1].squeeze(2) -> [B, N]
         
-        interpolated_points = index_points(points2, nearest_index)   # [B, N, 1] -> [B, N]
+        interpolated_points = index_points(points2, nearest_index)
 
         if points1 is not None:
             points1 = points1.permute(0, 2, 1)
