@@ -8,6 +8,10 @@ import sys
 import torch
 import numpy as np
 
+# To make profiler work
+import torchvision.models as models
+from torch.profiler import profile, record_function, ProfilerActivity
+
 import datetime
 import logging
 import provider
@@ -183,7 +187,7 @@ def main(args):
     #     warmup=2,
     #     active=6,
     #     repeat=1),
-    on_trace_ready=tensorboard_trace_handler,       # Saves profiling result to disk for analysis in VSC TensorBoard
+    # on_trace_ready=tensorboard_trace_handler,       # Saves profiling result to disk for analysis in VSC TensorBoard
     profile_memory=True,                            # Track tensor memory allocation/ deallocation
     with_stack=False                                # record source information (file and line number) for the operations
 ) as profiler:
