@@ -171,18 +171,18 @@ def main(args):
     
     logger.info('Start training...')
     with torch.profiler.profile(
-    schedule=torch.profiler.schedule(               # Limit the number of training steps included to reduce the amount of data collecteds
-         # In this example with wait=1, warmup=1, active=2,
-        # profiler will skip the first step/iteration,
-        # start warming up on the second, record
-        # the third and the forth iterations,
-        # after which the trace will become available
-        # and on_trace_ready (when set) is called;
-        # the cycle repeats starting with the next step
-        wait=2,
-        warmup=2,
-        active=6,
-        repeat=1),
+    # schedule=torch.profiler.schedule(               # Limit the number of training steps included to reduce the amount of data collecteds
+    #      # In this example with wait=1, warmup=1, active=2,
+    #     # profiler will skip the first step/iteration,
+    #     # start warming up on the second, record
+    #     # the third and the forth iterations,
+    #     # after which the trace will become available
+    #     # and on_trace_ready (when set) is called;
+    #     # the cycle repeats starting with the next step
+    #     wait=2,
+    #     warmup=2,
+    #     active=6,
+    #     repeat=1),
     on_trace_ready=tensorboard_trace_handler,       # Saves profiling result to disk for analysis in VSC TensorBoard
     profile_memory=True,                            # Track tensor memory allocation/ deallocation
     with_stack=False                                # record source information (file and line number) for the operations
