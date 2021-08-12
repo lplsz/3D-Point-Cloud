@@ -130,13 +130,12 @@ def main(args):
     shutil.copy('models/pointnet2_utils.py', str(exp_dir))
     shutil.copy('./train_classification.py', str(exp_dir))
 
-    # NOTE: Add parameters count
-    log_string('Number of parameters ...')
-    log_string(str(sum(p.numel() for p in model.parameters()))) # Only trainable parameters: if p.requires_grad
-
     classifier = model.get_model(num_class, normal_channel=args.use_normals)
     criterion = model.get_loss()
     classifier.apply(inplace_relu)
+
+    # NOTE: Add parameters count: Only trainable parameters: if p.requires_grad
+    log_string('Number of parameters: ' + str(sum(p.numel() for p in classifier.parameters())))
 
     if not args.use_cpu:
         classifier = classifier.cuda()
