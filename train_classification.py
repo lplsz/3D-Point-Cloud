@@ -134,6 +134,9 @@ def main(args):
     criterion = model.get_loss()
     classifier.apply(inplace_relu)
 
+    # NOTE: Add parameters count: Only trainable parameters: if p.requires_grad
+    log_string('Number of parameters: ' + str(sum(p.numel() for p in classifier.parameters())))
+
     if not args.use_cpu:
         classifier = classifier.cuda()
         criterion = criterion.cuda()
