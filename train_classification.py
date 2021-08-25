@@ -10,6 +10,7 @@ import numpy as np
 
 import datetime
 import logging
+
 import provider
 import importlib
 import shutil
@@ -18,6 +19,11 @@ import argparse
 from pathlib import Path
 from tqdm import tqdm
 from data_utils.ModelNetDataLoader import ModelNetDataLoader
+
+# Imports of torch profiler
+import torchvision.models as models
+from torch.profiler import profile, record_function, ProfilerActivity
+from torch.profiler.profiler import tensorboard_trace_handler
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -171,26 +177,32 @@ def main(args):
     
     logger.info('Start training...')
     with torch.profiler.profile(
-    # schedule=torch.profiler.schedule(               # Limit the number of training steps included to reduce the amount of data collecteds
-    #      # In this example with wait=1, warmup=1, active=2,
-    #     # profiler will skip the first step/iteration,
-    #     # start warming up on the second, record
-    #     # the third and the forth iterations,
-    #     # after which the trace will become available
-    #     # and on_trace_ready (when set) is called;
-    #     # the cycle repeats starting with the next step
-    #     wait=2,
-    #     warmup=2,
-    #     active=6,
-    #     repeat=1),
-    on_trace_ready=tensorboard_trace_handler,       # Saves profiling result to disk for analysis in VSC TensorBoard
-    profile_memory=True,                            # Track tensor memory allocation/ deallocation
-    with_stack=False                                # record source information (file and line number) for the operations
-) as profiler:
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA,
+        ],
+        schedule=torch.profiler.schedule(               # Limit the number of training steps included to reduce the amount of data collecteds
+             # In this example with wait=1, warmup=1, active=2,
+            # profiler will skip the first step/iteration,
+            # start warming up on the second, record
+            # the third and the forth iterations,
+            # after which the trace will become available
+            # and on_trace_ready (when set) is called;
+            # the cycle repeats starting with the next step
+            wait=0,
+            warmup=0,
+            active=1,
+            # repeat=0
+        ),
+        # on_trace_ready=tensorboard_trace_handler('.log/Profiler'),       # Saves profiling result to disk for analysis in VSC TensorBoard
+        profile_memory=True,                            # Track tensor memory allocation/ deallocation
+        with_stack=False                                # record source information (file and line number) for the operations
+    ) as profiler:
         for epoch in range(start_epoch, args.epoch):
             log_string('Epoch %d (%d/%s):' % (global_epoch + 1, epoch + 1, args.epoch))
             mean_correct = []
             classifier = classifier.train()
+            # profiler.step()     # send a signal to the profiler that the next iteration has started
 
             scheduler.step()
             for batch_id, (points, target) in tqdm(enumerate(trainDataLoader, 0), total=len(trainDataLoader), smoothing=0.9):
@@ -243,7 +255,11 @@ def main(args):
                         'optimizer_state_dict': optimizer.state_dict(),
                     }
                     torch.save(state, savepath)
-                global_epoch += 1
+                global_epoch += 1            
+
+        # log_string(profiler.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+        # log_string(profiler.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+        # log_string(profiler.key_averages().table(sort_by="self_cpu_memory_usage", row_limit=10))
 
     logger.info('End of training...')
     # NOTE: Log the profiler
