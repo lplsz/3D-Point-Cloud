@@ -26,7 +26,7 @@ from torch.profiler import profile, record_function, ProfilerActivity
 from torch.profiler.profiler import tensorboard_trace_handler
 
 # Import for model summary
-from torchsummary import summary
+# from torchsummary import summary
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -203,19 +203,14 @@ def main(args):
     #     with_stack=False,                               # record source information (file and line number) for the operations
     #     use_cuda=True,
     # ) as profiler:
-    with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA,], profile_memory=True, with_stack=False, use_cuda=True,) as profiler:
+    with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU,], record_shapes=True, profile_memory=True, with_stack=False) as profiler:
         for epoch in range(start_epoch, args.epoch):
             log_string('Epoch %d (%d/%s):' % (global_epoch + 1, epoch + 1, args.epoch))
             mean_correct = []
             classifier = classifier.train()
-            # profiler.step()     # send a signal to the profiler that the next iteration has started
 
             scheduler.step()
             for batch_id, (points, target) in tqdm(enumerate(trainDataLoader, 0), total=len(trainDataLoader), smoothing=0.9):
-                if batch_id > 10:
-                    log_string("Break")
-                    break
-
                 optimizer.zero_grad()
 
                 points = points.data.numpy()
@@ -229,7 +224,6 @@ def main(args):
                     points, target = points.cuda(), target.cuda()
 
                 pred, trans_feat = classifier(points)
-                log_string(points.shape)
                 loss = criterion(pred, target.long(), trans_feat)
                 pred_choice = pred.data.max(1)[1]
 
@@ -239,13 +233,10 @@ def main(args):
                 optimizer.step()
                 global_step += 1
 
-                # NOTE: 
-                profiler.step()
-            
-            log_string(profiler.table())
-
             train_instance_acc = np.mean(mean_correct)
             log_string('Train Instance Accuracy: %f' % train_instance_acc)
+
+            profiler.step()     # send a signal to the profiler that the next iteration has started
 
             with torch.no_grad():
                 instance_acc, class_acc = test(classifier.eval(), testDataLoader, num_class=num_class)
@@ -273,16 +264,12 @@ def main(args):
                     torch.save(state, savepath)
                 global_epoch += 1            
 
-    # log_string(profiler.table())
-        # log_string(profiler.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-        # log_string(profiler.key_averages().table(sort_by="cuda_time_total", row_limit=10))
-        # log_string(profiler.key_averages().table(sort_by="self_cpu_memory_usage", row_limit=10))
-
     logger.info('End of training...')
     # NOTE: Log the profiler
+    log_string(profiler.table())
     log_string(profiler.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-    log_string(profiler.key_averages().table(sort_by="cuda_time_total", row_limit=10))
-    log_string(profiler.key_averages().table(sort_by="self_cpu_memory_usage", row_limit=10))
+    # log_string(profiler.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+    # log_string(profiler.key_averages().table(sort_by="self_cpu_memory_usage", row_limit=10))
 
 if __name__ == '__main__':
     args = parse_args()
