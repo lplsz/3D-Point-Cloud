@@ -19,6 +19,11 @@ from pathlib import Path
 from tqdm import tqdm
 from data_utils.ModelNetDataLoader import ModelNetDataLoader
 
+# Profiler
+import torchvision.models as models
+from torch.profiler import profile, record_function, ProfilerActivity
+from torch.profiler.profiler import tensorboard_trace_handler
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
@@ -130,13 +135,12 @@ def main(args):
     shutil.copy('models/pointnet2_utils.py', str(exp_dir))
     shutil.copy('./train_classification.py', str(exp_dir))
 
-    # NOTE: Add parameters count
-    log_string('Number of parameters ...')
-    log_string(str(sum(p.numel() for p in model.parameters()))) # Only trainable parameters: if p.requires_grad
-
     classifier = model.get_model(num_class, normal_channel=args.use_normals)
     criterion = model.get_loss()
     classifier.apply(inplace_relu)
+
+    # NOTE: Add parameters count
+    log_string('Number of parameters: ' + str(sum(p.numel() for p in classifier.parameters())))
 
     if not args.use_cpu:
         classifier = classifier.cuda()
@@ -171,23 +175,26 @@ def main(args):
     '''TRANING'''
     
     logger.info('Start training...')
-    with torch.profiler.profile(
-    schedule=torch.profiler.schedule(               # Limit the number of training steps included to reduce the amount of data collecteds
-         # In this example with wait=1, warmup=1, active=2,
-        # profiler will skip the first step/iteration,
-        # start warming up on the second, record
-        # the third and the forth iterations,
-        # after which the trace will become available
-        # and on_trace_ready (when set) is called;
-        # the cycle repeats starting with the next step
-        wait=2,
-        warmup=2,
-        active=6,
-        repeat=1),
-    on_trace_ready=tensorboard_trace_handler,       # Saves profiling result to disk for analysis in VSC TensorBoard
-    profile_memory=True,                            # Track tensor memory allocation/ deallocation
-    with_stack=False                                # record source information (file and line number) for the operations
-) as profiler:
+#     with torch.profiler.profile(
+#     schedule=torch.profiler.schedule(               # Limit the number of training steps included to reduce the amount of data collecteds
+#          # In this example with wait=1, warmup=1, active=2,
+#         # profiler will skip the first step/iteration,
+#         # start warming up on the second, record
+#         # the third and the forth iterations,
+#         # after which the trace will become available
+#         # and on_trace_ready (when set) is called;
+#         # the cycle repeats starting with the next step
+#         wait=2,
+#         warmup=2,
+#         active=6,
+#         repeat=1),
+#     on_trace_ready=tensorboard_trace_handler,       # Saves profiling result to disk for analysis in VSC TensorBoard
+#     profile_memory=True,                            # Track tensor memory allocation/ deallocation
+#     with_stack=False                                # record source information (file and line number) for the operations
+# ) as profiler:
+
+    best_training_instance_acc = 0.0
+    with torch.profiler.profile(record_shapes=True, profile_memory=True, on_trace_ready=torch.profiler.tensorboard_trace_handler("Profiler/tensorboard_cls_origin")) as profiler:
         for epoch in range(start_epoch, args.epoch):
             log_string('Epoch %d (%d/%s):' % (global_epoch + 1, epoch + 1, args.epoch))
             mean_correct = []
@@ -220,37 +227,61 @@ def main(args):
             train_instance_acc = np.mean(mean_correct)
             log_string('Train Instance Accuracy: %f' % train_instance_acc)
 
-            with torch.no_grad():
-                instance_acc, class_acc = test(classifier.eval(), testDataLoader, num_class=num_class)
+            # Amended to skip testing
+            if (train_instance_acc >= best_training_instance_acc):
+                best_training_instance_acc = train_instance_acc
+                best_epoch = epoch + 1
 
-                if (instance_acc >= best_instance_acc):
-                    best_instance_acc = instance_acc
-                    best_epoch = epoch + 1
+            log_string('Best Training Instance Accuracy: %f, Training Instance Accuracy: %f' % (best_training_instance_acc, train_instance_acc))
+            if (train_instance_acc >= best_training_instance_acc):
+                logger.info('Save model...')
+                savepath = str(checkpoints_dir) + '/best_model.pth'
+                log_string('Saving at %s' % savepath)
+                state = {
+                    'epoch': best_epoch,
+                    'instance_acc': train_instance_acc,
+                    'class_acc': 0.0,
+                    'model_state_dict': classifier.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                }
+                torch.save(state, savepath)
+            
+            global_epoch += 1
+            profiler.step()
 
-                if (class_acc >= best_class_acc):
-                    best_class_acc = class_acc
-                log_string('Test Instance Accuracy: %f, Class Accuracy: %f' % (instance_acc, class_acc))
-                log_string('Best Instance Accuracy: %f, Class Accuracy: %f' % (best_instance_acc, best_class_acc))
+            # with torch.no_grad():
+            #     instance_acc, class_acc = test(classifier.eval(), testDataLoader, num_class=num_class)
 
-                if (instance_acc >= best_instance_acc):
-                    logger.info('Save model...')
-                    savepath = str(checkpoints_dir) + '/best_model.pth'
-                    log_string('Saving at %s' % savepath)
-                    state = {
-                        'epoch': best_epoch,
-                        'instance_acc': instance_acc,
-                        'class_acc': class_acc,
-                        'model_state_dict': classifier.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                    }
-                    torch.save(state, savepath)
-                global_epoch += 1
+            #     if (instance_acc >= best_instance_acc):
+            #         best_instance_acc = instance_acc
+            #         best_epoch = epoch + 1
+
+            #     if (class_acc >= best_class_acc):
+            #         best_class_acc = class_acc
+            #     log_string('Test Instance Accuracy: %f, Class Accuracy: %f' % (instance_acc, class_acc))
+            #     log_string('Best Instance Accuracy: %f, Class Accuracy: %f' % (best_instance_acc, best_class_acc))
+
+            #     if (instance_acc >= best_instance_acc):
+            #         logger.info('Save model...')
+            #         savepath = str(checkpoints_dir) + '/best_model.pth'
+            #         log_string('Saving at %s' % savepath)
+            #         state = {
+            #             'epoch': best_epoch,
+            #             'instance_acc': instance_acc,
+            #             'class_acc': class_acc,
+            #             'model_state_dict': classifier.state_dict(),
+            #             'optimizer_state_dict': optimizer.state_dict(),
+            #         }
+            #         torch.save(state, savepath)
+            #     global_epoch += 1
 
     logger.info('End of training...')
     # NOTE: Log the profiler
+    log_string('Profiler Output:')
     log_string(profiler.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-    log_string(profiler.key_averages().table(sort_by="cuda_time_total", row_limit=10))
     log_string(profiler.key_averages().table(sort_by="self_cpu_memory_usage", row_limit=10))
+    log_string(profiler.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+    log_string(profiler.table())
 
 if __name__ == '__main__':
     args = parse_args()
