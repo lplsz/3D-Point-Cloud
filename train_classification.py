@@ -21,9 +21,9 @@ from tqdm import tqdm
 from data_utils.ModelNetDataLoader import ModelNetDataLoader
 
 # Imports of torch profiler
-import torchvision.models as models
-from torch.profiler import profile, record_function, ProfilerActivity
-from torch.profiler.profiler import tensorboard_trace_handler
+# import torchvision.models as models
+# from torch.profiler import profile, record_function, ProfilerActivity
+# from torch.profiler.profiler import tensorboard_trace_handler
 
 # Import for model summary
 # from torchsummary import summary
@@ -203,71 +203,71 @@ def main(args):
     #     with_stack=False,                               # record source information (file and line number) for the operations
     #     use_cuda=True,
     # ) as profiler:
-    with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU,], record_shapes=True, profile_memory=True, with_stack=False) as profiler:
-        for epoch in range(start_epoch, args.epoch):
-            log_string('Epoch %d (%d/%s):' % (global_epoch + 1, epoch + 1, args.epoch))
-            mean_correct = []
-            classifier = classifier.train()
+    # with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU,], record_shapes=True, profile_memory=True, with_stack=False) as profiler:
+    for epoch in range(start_epoch, args.epoch):
+        log_string('Epoch %d (%d/%s):' % (global_epoch + 1, epoch + 1, args.epoch))
+        mean_correct = []
+        classifier = classifier.train()
 
-            scheduler.step()
-            for batch_id, (points, target) in tqdm(enumerate(trainDataLoader, 0), total=len(trainDataLoader), smoothing=0.9):
-                optimizer.zero_grad()
+        scheduler.step()
+        for batch_id, (points, target) in tqdm(enumerate(trainDataLoader, 0), total=len(trainDataLoader), smoothing=0.9):
+            optimizer.zero_grad()
 
-                points = points.data.numpy()
-                points = provider.random_point_dropout(points)
-                points[:, :, 0:3] = provider.random_scale_point_cloud(points[:, :, 0:3])
-                points[:, :, 0:3] = provider.shift_point_cloud(points[:, :, 0:3])
-                points = torch.Tensor(points)
-                points = points.transpose(2, 1)
+            points = points.data.numpy()
+            points = provider.random_point_dropout(points)
+            points[:, :, 0:3] = provider.random_scale_point_cloud(points[:, :, 0:3])
+            points[:, :, 0:3] = provider.shift_point_cloud(points[:, :, 0:3])
+            points = torch.Tensor(points)
+            points = points.transpose(2, 1)
 
-                if not args.use_cpu:
-                    points, target = points.cuda(), target.cuda()
+            if not args.use_cpu:
+                points, target = points.cuda(), target.cuda()
 
-                pred, trans_feat = classifier(points)
-                loss = criterion(pred, target.long(), trans_feat)
-                pred_choice = pred.data.max(1)[1]
+            pred, trans_feat = classifier(points)
+            loss = criterion(pred, target.long(), trans_feat)
+            pred_choice = pred.data.max(1)[1]
 
-                correct = pred_choice.eq(target.long().data).cpu().sum()
-                mean_correct.append(correct.item() / float(points.size()[0]))
-                loss.backward()
-                optimizer.step()
-                global_step += 1
+            correct = pred_choice.eq(target.long().data).cpu().sum()
+            mean_correct.append(correct.item() / float(points.size()[0]))
+            loss.backward()
+            optimizer.step()
+            global_step += 1
 
-            train_instance_acc = np.mean(mean_correct)
-            log_string('Train Instance Accuracy: %f' % train_instance_acc)
+        train_instance_acc = np.mean(mean_correct)
+        log_string('Train Instance Accuracy: %f' % train_instance_acc)
 
-            profiler.step()     # send a signal to the profiler that the next iteration has started
+        # profiler.step()     # send a signal to the profiler that the next iteration has started
 
-            with torch.no_grad():
-                instance_acc, class_acc = test(classifier.eval(), testDataLoader, num_class=num_class)
+        with torch.no_grad():
+            instance_acc, class_acc = test(classifier.eval(), testDataLoader, num_class=num_class)
 
-                if (instance_acc >= best_instance_acc):
-                    best_instance_acc = instance_acc
-                    best_epoch = epoch + 1
+            if (instance_acc >= best_instance_acc):
+                best_instance_acc = instance_acc
+                best_epoch = epoch + 1
 
-                if (class_acc >= best_class_acc):
-                    best_class_acc = class_acc
-                log_string('Test Instance Accuracy: %f, Class Accuracy: %f' % (instance_acc, class_acc))
-                log_string('Best Instance Accuracy: %f, Class Accuracy: %f' % (best_instance_acc, best_class_acc))
+            if (class_acc >= best_class_acc):
+                best_class_acc = class_acc
+            log_string('Test Instance Accuracy: %f, Class Accuracy: %f' % (instance_acc, class_acc))
+            log_string('Best Instance Accuracy: %f, Class Accuracy: %f' % (best_instance_acc, best_class_acc))
 
-                if (instance_acc >= best_instance_acc):
-                    logger.info('Save model...')
-                    savepath = str(checkpoints_dir) + '/best_model.pth'
-                    log_string('Saving at %s' % savepath)
-                    state = {
-                        'epoch': best_epoch,
-                        'instance_acc': instance_acc,
-                        'class_acc': class_acc,
-                        'model_state_dict': classifier.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                    }
-                    torch.save(state, savepath)
-                global_epoch += 1            
+            if (instance_acc >= best_instance_acc):
+                logger.info('Save model...')
+                savepath = str(checkpoints_dir) + '/best_model.pth'
+                log_string('Saving at %s' % savepath)
+                state = {
+                    'epoch': best_epoch,
+                    'instance_acc': instance_acc,
+                    'class_acc': class_acc,
+                    'model_state_dict': classifier.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                }
+                torch.save(state, savepath)
+            global_epoch += 1            
 
     logger.info('End of training...')
     # NOTE: Log the profiler
-    log_string(profiler.table())
-    log_string(profiler.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+    # log_string(profiler.table())
+    # log_string(profiler.key_averages().table(sort_by="cpu_time_total", row_limit=10))
     # log_string(profiler.key_averages().table(sort_by="cuda_time_total", row_limit=10))
     # log_string(profiler.key_averages().table(sort_by="self_cpu_memory_usage", row_limit=10))
 
