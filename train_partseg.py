@@ -119,6 +119,8 @@ def main(args):
     criterion = MODEL.get_loss().cuda()
     classifier.apply(inplace_relu)
 
+    log_string('Number of parameters: ' + str(sum(p.numel() for p in classifier.parameters())))
+
     def weights_init(m):
         classname = m.__class__.__name__
         if classname.find('Conv2d') != -1:
