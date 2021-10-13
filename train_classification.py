@@ -27,6 +27,7 @@ from data_utils.ModelNetDataLoader import ModelNetDataLoader
 
 # Import for model summary
 # from torchsummary import summary
+from torchinfo import summary
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -144,7 +145,7 @@ def main(args):
     classifier.apply(inplace_relu)
 
     # NOTE: Add parameters count: Only trainable parameters: if p.requires_grad
-    log_string('Number of parameters: ' + str(sum(p.numel() for p in classifier.parameters())))
+    # log_string('Number of parameters: ' + str(sum(p.numel() for p in classifier.parameters())))
     # log_string(models.vgg16(), ())
 
     if not args.use_cpu:
@@ -178,7 +179,7 @@ def main(args):
     best_class_acc = 0.0
 
     '''TRANING'''
-    
+
     logger.info('Start training...')
     # with torch.profiler.profile(
     #     activities=[
@@ -222,6 +223,9 @@ def main(args):
 
             if not args.use_cpu:
                 points, target = points.cuda(), target.cuda()
+            
+            # Print model summary
+            # summary(classifier, (24, 6, 1024))
 
             pred, trans_feat = classifier(points)
             loss = criterion(pred, target.long(), trans_feat)

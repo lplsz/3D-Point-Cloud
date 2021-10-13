@@ -131,3 +131,4 @@ dmypy.json
 /data
 /log
 /unsw_pointnet_log
+/show_part_seg
